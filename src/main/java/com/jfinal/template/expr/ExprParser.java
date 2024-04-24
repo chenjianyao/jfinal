@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,29 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import com.jfinal.template.EngineConfig;
-import com.jfinal.template.expr.Sym;
-import com.jfinal.template.expr.ast.Arith;
-import com.jfinal.template.expr.ast.Array;
-import com.jfinal.template.expr.ast.Assign;
-import com.jfinal.template.expr.ast.Compare;
-import com.jfinal.template.expr.ast.Const;
-import com.jfinal.template.expr.ast.Expr;
-import com.jfinal.template.expr.ast.ExprList;
-import com.jfinal.template.expr.ast.Field;
-import com.jfinal.template.expr.ast.ForCtrl;
-import com.jfinal.template.expr.ast.Id;
-import com.jfinal.template.expr.ast.IncDec;
-import com.jfinal.template.expr.ast.Index;
-import com.jfinal.template.expr.ast.Logic;
-import com.jfinal.template.expr.ast.Map;
-import com.jfinal.template.expr.ast.Method;
-import com.jfinal.template.expr.ast.NullSafe;
-import com.jfinal.template.expr.ast.RangeArray;
-import com.jfinal.template.expr.ast.SharedMethod;
-import com.jfinal.template.expr.ast.StaticField;
-import com.jfinal.template.expr.ast.StaticMethod;
-import com.jfinal.template.expr.ast.Ternary;
-import com.jfinal.template.expr.ast.Unary;
+import com.jfinal.template.expr.ast.*;
 import com.jfinal.template.stat.Location;
 import com.jfinal.template.stat.ParaToken;
 import com.jfinal.template.stat.ParseException;
@@ -100,6 +78,8 @@ public class ExprParser {
 	
 	public ForCtrl parseForCtrl() {
 		Expr forCtrl = parse(false);
+		
+		// 可能返回 ExprList.NULL_EXPR_LIST，必须做判断
 		if (forCtrl instanceof ForCtrl) {
 			return (ForCtrl)forCtrl;
 		} else {
@@ -124,12 +104,12 @@ public class ExprParser {
 	/**
 	 * exprList : expr (',' expr)*
 	 */
-	Expr exprList() {
+	ExprList exprList() {
 		List<Expr> exprList = new ArrayList<Expr>();
 		while (true) {
-			Expr stat = expr();
-			if (stat != null) {
-				exprList.add(stat);
+			Expr expr = expr();
+			if (expr != null) {
+				exprList.add(expr);
 				if (peek().sym == Sym.COMMA) {
 					move();
 					if (peek() == EOF) {
@@ -290,7 +270,7 @@ public class ExprParser {
 		case ADD:
 		case SUB:
 			move();
-			return new Unary(tok.sym, unary(), location);
+			return new Unary(tok.sym, unary(), location).toConstIfPossible();
 		case INC:
 		case DEC:
 			move();
@@ -338,19 +318,30 @@ public class ExprParser {
 		match(Sym.STATIC);
 		String memberName = match(Sym.ID).value();
 		
-		// com.jfinal.kit.Str::isBlank(str)
+		// com.jfinal.kit.StrKit::isBlank(str)
 		if (peek().sym == Sym.LPAREN) {
 			move();
 			if (peek().sym == Sym.RPAREN) {
 				move();
+				
+				if (! engineConfig.isStaticMethodExpressionEnabled()) {
+					throw new ParseException("Static Method expression is not enabled", location);
+				}
 				return new StaticMethod(clazz, memberName, location);
 			}
 			
-			ExprList exprList = (ExprList)exprList();
+			ExprList exprList = exprList();
 			match(Sym.RPAREN);
+			
+			if (! engineConfig.isStaticMethodExpressionEnabled()) {
+				throw new ParseException("Static Method expression is not enabled", location);
+			}
 			return new StaticMethod(clazz, memberName, exprList, location);
 		}
 		
+		if (! engineConfig.isStaticFieldExpressionEnabled()) {
+			throw new ParseException("Static Field expression is not enabled", location);
+		}
 		// com.jfinal.core.Const::JFINAL_VERSION
 		return new StaticField(clazz, memberName, location);
 	}
@@ -383,7 +374,7 @@ public class ExprParser {
 			return indexMethodField(sharedMethod);
 		}
 		
-		ExprList exprList = (ExprList)exprList();
+		ExprList exprList = exprList();
 		SharedMethod sharedMethod = new SharedMethod(engineConfig.getSharedMethodKit(), tok.value(), exprList, location);
 		match(Sym.RPAREN);
 		return indexMethodField(sharedMethod);
@@ -410,17 +401,23 @@ public class ExprParser {
 				expr = new Index(expr, index, location);
 				continue;
 			}
-			if (tok.sym != Sym.DOT) {
+			if (tok.sym != Sym.DOT && tok.sym != Sym.OPTIONAL_CHAIN) {
 				return expr;
 			}
-			if ((tok = move()).sym != Sym.ID) {
+			
+			Tok id = move();
+			if (id.sym != Sym.ID) {
 				resetForward(forward - 1);
 				return expr;
 			}
 			
+			// 可选链操作符 ?.
+			boolean optionalChain = (tok.sym == Sym.OPTIONAL_CHAIN);
+			
 			move();
+			// expr '.' ID
 			if (peek().sym != Sym.LPAREN) {
-				expr = new Field(expr, tok.value(), location);
+				expr = new Field(expr, id.value(), optionalChain, location);
 				continue;
 			}
 			
@@ -428,14 +425,14 @@ public class ExprParser {
 			// expr '.' ID '(' ')'
 			if (peek().sym == Sym.RPAREN) {
 				move();
-				expr = new Method(expr, tok.value(), location);
+				expr = new Method(expr, id.value(), optionalChain, location);
 				continue;
 			}
 			
 			// expr '.' ID '(' exprList ')'
-			ExprList exprList = (ExprList)exprList();
+			ExprList exprList = exprList();
 			match(Sym.RPAREN);
-			expr = new Method(expr, tok.value(), exprList, location);
+			expr = new Method(expr, id.value(), exprList, optionalChain, location);
 		}
 	}
 	
@@ -466,21 +463,26 @@ public class ExprParser {
 	}
 	
 	/**
-	 * mapEntry : (ID | STR) ':' expr
+	 * mapEntry : (ID | STR | INT | LONG | FLOAT | DOUBLE | TRUE | FALSE | NULL) ':' expr
+	 * 设计目标为 map 定义与初始化，所以 ID 仅当成 STR 不进行求值
 	 */
 	void buildMapEntry(LinkedHashMap<Object, Expr> map) {
-		Tok tok = peek();
-		if (tok.sym == Sym.ID || tok.sym == Sym.STR) {
-			move();
-			match(Sym.COLON);
-			Expr value = expr();
-			if (value == null) {
-				throw new ParseException("Expression error: the value on the right side of map entry can not be blank", location);
-			}
-			map.put(tok.value(), value);
-			return ;
+		Expr keyExpr = expr();
+		Object key;
+		if (keyExpr instanceof Id) {
+			key = ((Id)keyExpr).getId();
+		} else if (keyExpr instanceof Const) {
+			key = ((Const)keyExpr).getValue();
+		} else {
+			throw new ParseException("Expression error: the value of map key must be identifier, String, Boolean, null or Number", location);
 		}
-		throw new ParseException("Expression error: the value of map key must be identifier or String", location);
+		
+		match(Sym.COLON);
+		Expr value = expr();
+		if (value == null) {
+			throw new ParseException("Expression error: the value on the right side of map entry can not be blank", location);
+		}
+		map.put(key, value);
 	}
 	
 	/**
@@ -498,7 +500,7 @@ public class ExprParser {
 			move();
 			return new Array(ExprList.NULL_EXPR_ARRAY, location);
 		}
-		ExprList exprList = (ExprList)exprList();
+		ExprList exprList = exprList();
 		if (exprList.length() == 1 && peek().sym == Sym.RANGE) {
 			move();
 			Expr end = expr();
@@ -526,12 +528,14 @@ public class ExprParser {
 			move();
 			return new Id(tok.value());
 		case STR:
+			move();
+			return new Const(tok.sym, tok.value());
 		case INT:
 		case LONG:
 		case FLOAT:
 		case DOUBLE:
 			move();
-			return new Const(tok.sym, tok.value());
+			return new Const(tok.sym, ((NumTok)tok).getNumberValue());
 		case TRUE:
 			move();
 			return Const.TRUE;
@@ -544,12 +548,14 @@ public class ExprParser {
 		case COMMA:
 		case SEMICOLON:
 		case QUESTION:	// support "c ?? ? a : b"
-		case AND: case OR: case RPAREN: case EQUAL: case NOTEQUAL:	// support "a.b ?? && expr"
+		case AND: case OR: case EQUAL: case NOTEQUAL:	// support "a.b ?? && expr"
+		case RPAREN:	// support "(a.b ??)"
+		case RBRACK:	// support "[start .. end ??]"
+		case RBRACE:	// support "{key : value ??}"
+		case RANGE:		// support "[start ?? .. end]"
+		case COLON:		// support "c ? a ?? : b"
 		case EOF:
 			return null;
-		// case RPAREN:
-		case RBRACK:
-		case RBRACE:
 		default :
 			throw new ParseException("Expression error: can not match the symbol \"" + tok.value() + "\"", location);
 		}
@@ -558,13 +564,13 @@ public class ExprParser {
 	/**
 	 * forControl : ID : expr | exprList? ';' expr? ';' exprList?
 	 */
-	Expr forCtrl() {
-		ExprList exprList = (ExprList)exprList();
+	ForCtrl forCtrl() {
+		ExprList exprList = exprList();
 		if (peek().sym == Sym.SEMICOLON) {
 			move();
 			Expr cond = expr();
 			match(Sym.SEMICOLON);
-			Expr update = exprList();
+			ExprList update = exprList();
 			return new ForCtrl(exprList, cond, update, location);
 		}
 		

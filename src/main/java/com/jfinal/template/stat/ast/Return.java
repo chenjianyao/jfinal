@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 package com.jfinal.template.stat.ast;
 
-import java.io.Writer;
 import com.jfinal.template.Env;
+import com.jfinal.template.io.Writer;
 import com.jfinal.template.stat.Scope;
 
 /**
@@ -25,12 +25,12 @@ import com.jfinal.template.stat.Scope;
  * 通常用于 #define 指令内部，不支持返回值
  */
 public class Return  extends Stat {
-	
+
 	public static final Return me = new Return();
-	
+
 	private Return() {
 	}
-	
+
 	public void exec(Env env, Scope scope, Writer writer) {
 		scope.getCtrl().setReturn();
 	}

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,24 +16,34 @@
 
 package com.jfinal.plugin.activerecord.dialect;
 
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import com.jfinal.plugin.activerecord.CPI;
 import com.jfinal.plugin.activerecord.Record;
 import com.jfinal.plugin.activerecord.Table;
+import com.jfinal.plugin.activerecord.builder.TimestampProcessedModelBuilder;
+import com.jfinal.plugin.activerecord.builder.TimestampProcessedRecordBuilder;
 
 /**
  * SqlServerDialect 为OSC 网友战五渣贡献代码：http://www.oschina.net/question/2333909_234198
  */
 public class SqlServerDialect extends Dialect {
 	
+	public SqlServerDialect() {
+		this.modelBuilder = TimestampProcessedModelBuilder.me;
+		this.recordBuilder = TimestampProcessedRecordBuilder.me;
+	}
+	
 	public String forTableBuilderDoBuild(String tableName) {
 		return "select * from " + tableName + " where 1 = 2";
 	}
 	
 	public void forModelSave(Table table, Map<String, Object> attrs, StringBuilder sql, List<Object> paras) {
-		sql.append("insert into ").append(table.getName()).append("(");
+		sql.append("insert into ").append(table.getName()).append('(');
 		StringBuilder temp = new StringBuilder(") values(");
 		for (Entry<String, Object> e: attrs.entrySet()) {
 			String colName = e.getKey();
@@ -43,11 +53,11 @@ public class SqlServerDialect extends Dialect {
 					temp.append(", ");
 				}
 				sql.append(colName);
-				temp.append("?");
+				temp.append('?');
 				paras.add(e.getValue());
 			}
 		}
-		sql.append(temp.toString()).append(")");
+		sql.append(temp.toString()).append(')');
 	}
 	
 	public String forModelDeleteById(Table table) {
@@ -135,7 +145,7 @@ public class SqlServerDialect extends Dialect {
 		trimPrimaryKeys(pKeys);
 		
 		sql.append("insert into ");
-		sql.append(tableName).append("(");
+		sql.append(tableName).append('(');
 		StringBuilder temp = new StringBuilder();
 		temp.append(") values(");
 		
@@ -145,20 +155,23 @@ public class SqlServerDialect extends Dialect {
 				temp.append(", ");
 			}
 			sql.append(e.getKey());
-			temp.append("?");
+			temp.append('?');
 			paras.add(e.getValue());
 		}
-		sql.append(temp.toString()).append(")");
+		sql.append(temp.toString()).append(')');
 	}
 	
 	public void forDbUpdate(String tableName, String[] pKeys, Object[] ids, Record record, StringBuilder sql, List<Object> paras) {
 		tableName = tableName.trim();
 		trimPrimaryKeys(pKeys);
 		
+		// Record 新增支持 modifyFlag
+		Set<String> modifyFlag = CPI.getModifyFlag(record);
+		
 		sql.append("update ").append(tableName).append(" set ");
 		for (Entry<String, Object> e: record.getColumns().entrySet()) {
 			String colName = e.getKey();
-			if (!isPrimaryKey(colName, pKeys)) {
+			if (modifyFlag.contains(colName) && !isPrimaryKey(colName, pKeys)) {
 				if (paras.size() > 0) {
 					sql.append(", ");
 				}
@@ -179,7 +192,7 @@ public class SqlServerDialect extends Dialect {
 	/**
 	 * sql.replaceFirst("(?i)select", "") 正则中带有 "(?i)" 前缀，指定在匹配时不区分大小写
 	 */
-	public String forPaginate(int pageNumber, int pageSize, String select, String sqlExceptSelect) {
+	public String forPaginate(int pageNumber, int pageSize, StringBuilder findSql) {
 		int end = pageNumber * pageSize;
 		if (end <= 0) {
 			end = pageSize;
@@ -191,9 +204,17 @@ public class SqlServerDialect extends Dialect {
 		StringBuilder ret = new StringBuilder();
 		ret.append("SELECT * FROM ( SELECT row_number() over (order by tempcolumn) temprownumber, * FROM ");
 		ret.append(" ( SELECT TOP ").append(end).append(" tempcolumn=0,");
-		ret.append(select.replaceFirst("(?i)select", "")).append(" ").append(sqlExceptSelect);
+		ret.append(findSql.toString().replaceFirst("(?i)select", ""));
 		ret.append(")vip)mvp where temprownumber>").append(begin);
 		return ret.toString();
+	}
+	
+	public void fillStatement(PreparedStatement pst, List<Object> paras) throws SQLException {
+		fillStatementHandleDateType(pst, paras);
+	}
+	
+	public void fillStatement(PreparedStatement pst, Object... paras) throws SQLException {
+		fillStatementHandleDateType(pst, paras);
 	}
 }
 

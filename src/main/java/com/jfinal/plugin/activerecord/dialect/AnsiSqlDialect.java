@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,8 @@ import com.jfinal.plugin.activerecord.ModelBuilder;
 import com.jfinal.plugin.activerecord.Page;
 import com.jfinal.plugin.activerecord.Record;
 import com.jfinal.plugin.activerecord.Table;
+import com.jfinal.plugin.activerecord.builder.TimestampProcessedModelBuilder;
+import com.jfinal.plugin.activerecord.builder.TimestampProcessedRecordBuilder;
 
 /**
  * AnsiSqlDialect. Try to use ANSI SQL dialect with ActiveRecordPlugin.
@@ -42,12 +44,17 @@ import com.jfinal.plugin.activerecord.Table;
  */
 public class AnsiSqlDialect extends Dialect {
 	
+	public AnsiSqlDialect() {
+		this.modelBuilder = TimestampProcessedModelBuilder.me;
+		this.recordBuilder = TimestampProcessedRecordBuilder.me;
+	}
+	
 	public String forTableBuilderDoBuild(String tableName) {
 		return "select * from " + tableName + " where 1 = 2";
 	}
 	
 	public void forModelSave(Table table, Map<String, Object> attrs, StringBuilder sql, List<Object> paras) {
-		sql.append("insert into ").append(table.getName()).append("(");
+		sql.append("insert into ").append(table.getName()).append('(');
 		StringBuilder temp = new StringBuilder(") values(");
 		for (Entry<String, Object> e: attrs.entrySet()) {
 			String colName = e.getKey();
@@ -57,11 +64,11 @@ public class AnsiSqlDialect extends Dialect {
 					temp.append(", ");
 				}
 				sql.append(colName);
-				temp.append("?");
+				temp.append('?');
 				paras.add(e.getValue());
 			}
 		}
-		sql.append(temp.toString()).append(")");
+		sql.append(temp.toString()).append(')');
 	}
 	
 	public String forModelDeleteById(Table table) {
@@ -149,7 +156,7 @@ public class AnsiSqlDialect extends Dialect {
 		trimPrimaryKeys(pKeys);
 		
 		sql.append("insert into ");
-		sql.append(tableName).append("(");
+		sql.append(tableName).append('(');
 		StringBuilder temp = new StringBuilder();
 		temp.append(") values(");
 		
@@ -159,20 +166,23 @@ public class AnsiSqlDialect extends Dialect {
 				temp.append(", ");
 			}
 			sql.append(e.getKey());
-			temp.append("?");
+			temp.append('?');
 			paras.add(e.getValue());
 		}
-		sql.append(temp.toString()).append(")");
+		sql.append(temp.toString()).append(')');
 	}
 	
 	public void forDbUpdate(String tableName, String[] pKeys, Object[] ids, Record record, StringBuilder sql, List<Object> paras) {
 		tableName = tableName.trim();
 		trimPrimaryKeys(pKeys);
 		
+		// Record 新增支持 modifyFlag
+		Set<String> modifyFlag = CPI.getModifyFlag(record);
+		
 		sql.append("update ").append(tableName).append(" set ");
 		for (Entry<String, Object> e: record.getColumns().entrySet()) {
 			String colName = e.getKey();
-			if (!isPrimaryKey(colName, pKeys)) {
+			if (modifyFlag.contains(colName) && !isPrimaryKey(colName, pKeys)) {
 				if (paras.size() > 0) {
 					sql.append(", ");
 				}
@@ -193,7 +203,7 @@ public class AnsiSqlDialect extends Dialect {
 	/**
 	 * SELECT * FROM subject t1 WHERE (SELECT count(*) FROM subject t2 WHERE t2.id < t1.id AND t2.key = '123') > = 10 AND (SELECT count(*) FROM subject t2 WHERE t2.id < t1.id AND t2.key = '123') < 20 AND t1.key = '123'
 	 */
-	public String forPaginate(int pageNumber, int pageSize, String select, String sqlExceptSelect) {
+	public String forPaginate(int pageNumber, int pageSize, StringBuilder findSql) {
 		throw new ActiveRecordException("Your should not invoke this method because takeOverDbPaginate(...) will take over it.");
 	}
 	
@@ -202,8 +212,8 @@ public class AnsiSqlDialect extends Dialect {
 	}
 	
 	@SuppressWarnings("rawtypes")
-	public Page<Record> takeOverDbPaginate(Connection conn, int pageNumber, int pageSize, Boolean isGroupBySql, String select, String sqlExceptSelect, Object... paras) throws SQLException {
-		String totalRowSql = "select count(*) " + replaceOrderBy(sqlExceptSelect);
+	public Page<Record> takeOverDbPaginate(Connection conn, int pageNumber, int pageSize, Boolean isGroupBySql, String totalRowSql, StringBuilder findSql, Object... paras) throws SQLException {
+		// String totalRowSql = "select count(*) " + replaceOrderBy(sqlExceptSelect);
 		List result = CPI.query(conn, totalRowSql, paras);
 		int size = result.size();
 		if (isGroupBySql == null) {
@@ -228,9 +238,9 @@ public class AnsiSqlDialect extends Dialect {
 			return new Page<Record>(new ArrayList<Record>(0), pageNumber, pageSize, totalPage, (int)totalRow);
 		}
 		
-		StringBuilder sql = new StringBuilder();
-		sql.append(select).append(" ").append(sqlExceptSelect);
-		PreparedStatement pst = conn.prepareStatement(sql.toString(), ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+		// StringBuilder sql = new StringBuilder();
+		// sql.append(select).append(" ").append(sqlExceptSelect);
+		PreparedStatement pst = conn.prepareStatement(findSql.toString(), ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
 		for (int i=0; i<paras.length; i++) {
 			pst.setObject(i + 1, paras[i]);
 		}
@@ -265,11 +275,11 @@ public class AnsiSqlDialect extends Dialect {
 				if (types[i] < Types.BLOB) {
 					value = rs.getObject(i);
 				} else if (types[i] == Types.CLOB) {
-					value = ModelBuilder.handleClob(rs.getClob(i));
+					value = ModelBuilder.me.handleClob(rs.getClob(i));
 				} else if (types[i] == Types.NCLOB) {
-					value = ModelBuilder.handleClob(rs.getNClob(i));
+					value = ModelBuilder.me.handleClob(rs.getNClob(i));
 				} else if (types[i] == Types.BLOB) {
-					value = ModelBuilder.handleBlob(rs.getBlob(i));
+					value = ModelBuilder.me.handleBlob(rs.getBlob(i));
 				} else {
 					value = rs.getObject(i);
 				}
@@ -282,6 +292,7 @@ public class AnsiSqlDialect extends Dialect {
 	
 	private void buildLabelNamesAndTypes(ResultSetMetaData rsmd, String[] labelNames, int[] types) throws SQLException {
 		for (int i=1; i<labelNames.length; i++) {
+			// 备忘：getColumnLabel 获取 sql as 子句指定的名称而非字段真实名称
 			labelNames[i] = rsmd.getColumnLabel(i);
 			types[i] = rsmd.getColumnType(i);
 		}
@@ -292,8 +303,8 @@ public class AnsiSqlDialect extends Dialect {
 	}
 	
 	@SuppressWarnings({"rawtypes", "unchecked"})
-	public Page<? extends Model> takeOverModelPaginate(Connection conn, Class<? extends Model> modelClass, int pageNumber, int pageSize, Boolean isGroupBySql, String select, String sqlExceptSelect, Object... paras) throws Exception {
-		String totalRowSql = "select count(*) " + replaceOrderBy(sqlExceptSelect);
+	public Page<? extends Model> takeOverModelPaginate(Connection conn, Class<? extends Model> modelClass, int pageNumber, int pageSize, Boolean isGroupBySql, String totalRowSql, StringBuilder findSql, Object... paras) throws Exception {
+		// String totalRowSql = "select count(*) " + replaceOrderBy(sqlExceptSelect);
 		List result = CPI.query(conn, totalRowSql, paras);
 		int size = result.size();
 		if (isGroupBySql == null) {
@@ -319,9 +330,9 @@ public class AnsiSqlDialect extends Dialect {
 		}
 		
 		// --------
-		StringBuilder sql = new StringBuilder();
-		sql.append(select).append(" ").append(sqlExceptSelect);
-		PreparedStatement pst = conn.prepareStatement(sql.toString(), ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+		// StringBuilder sql = new StringBuilder();
+		// sql.append(select).append(" ").append(sqlExceptSelect);
+		PreparedStatement pst = conn.prepareStatement(findSql.toString(), ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
 		for (int i=0; i<paras.length; i++) {
 			pst.setObject(i + 1, paras[i]);
 		}
@@ -342,7 +353,7 @@ public class AnsiSqlDialect extends Dialect {
 	}
 	
 	@SuppressWarnings({"rawtypes", "unchecked"})
-	public final <T> List<T> buildModel(ResultSet rs, Class<? extends Model> modelClass, int pageSize) throws SQLException, InstantiationException, IllegalAccessException {
+	public final <T> List<T> buildModel(ResultSet rs, Class<? extends Model> modelClass, int pageSize) throws SQLException, ReflectiveOperationException {
 		List<T> result = new ArrayList<T>();
 		ResultSetMetaData rsmd = rs.getMetaData();
 		int columnCount = rsmd.getColumnCount();
@@ -357,11 +368,11 @@ public class AnsiSqlDialect extends Dialect {
 				if (types[i] < Types.BLOB) {
 					value = rs.getObject(i);
 				} else if (types[i] == Types.CLOB) {
-					value = ModelBuilder.handleClob(rs.getClob(i));
+					value = ModelBuilder.me.handleClob(rs.getClob(i));
 				} else if (types[i] == Types.NCLOB) {
-					value = ModelBuilder.handleClob(rs.getNClob(i));
+					value = ModelBuilder.me.handleClob(rs.getNClob(i));
 				} else if (types[i] == Types.BLOB) {
-					value = ModelBuilder.handleBlob(rs.getBlob(i));
+					value = ModelBuilder.me.handleBlob(rs.getBlob(i));
 				} else {
 					value = rs.getObject(i);
 				}
@@ -370,5 +381,13 @@ public class AnsiSqlDialect extends Dialect {
 			result.add((T)ar);
 		}
 		return result;
+	}
+	
+	public void fillStatement(PreparedStatement pst, List<Object> paras) throws SQLException {
+		fillStatementHandleDateType(pst, paras);
+	}
+	
+	public void fillStatement(PreparedStatement pst, Object... paras) throws SQLException {
+		fillStatementHandleDateType(pst, paras);
 	}
 }

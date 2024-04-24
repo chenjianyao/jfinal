@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,10 @@ import com.jfinal.template.stat.Scope;
 
 /**
  * RangeArray : [expr .. expr]
+ * 
+ * 用法：
+ * 1：[1..3]
+ * 2：[3..1]
  */
 public class RangeArray extends Expr {
 	
@@ -64,12 +68,12 @@ public class RangeArray extends Expr {
 		
 		final int start;
 		final int size;
-		final int increment;
+		final boolean increase;
 		final Location location;
 		
 		public RangeList(int start, int end, Location location) {
 			this.start = start;
-			this.increment = start <= end ? 1 : -1;
+			this.increase = (start <= end);
 			this.size = Math.abs(end - start) + 1;
 			this.location = location;
 		}
@@ -78,7 +82,7 @@ public class RangeArray extends Expr {
 			if (index < 0 || index >= size) {
 				throw new TemplateException("Index out of bounds. Index: " + index + ", Size: " + size, location);
 			}
-			return start + index * increment;
+			return increase ? start + index : start - index;
 		}
 		
 		public int size() {

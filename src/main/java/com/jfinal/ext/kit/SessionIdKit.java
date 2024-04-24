@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,17 +56,15 @@ public class SessionIdKit {
     }
     
 	public String generate(HttpServletRequest request) {
-        synchronized(this) {
-            String id = null;
-            while (id == null || id.length() == 0) {	//)||idInUse(id))
-                long r0 = weakRandom ? (hashCode()^Runtime.getRuntime().freeMemory()^random.nextInt()^(((long)request.hashCode())<<32)) : random.nextLong();
-                long r1 = random.nextLong();
-                if (r0<0) r0 = -r0;
-                if (r1<0) r1 = -r1;
-                id=Long.toString(r0,36)+Long.toString(r1,36);
-            }
-            return id;
+        String id = null;
+        while (id == null || id.length() == 0) {	//)||idInUse(id))
+            long r0 = weakRandom ? (hashCode()^Runtime.getRuntime().freeMemory()^random.nextInt()^(((long)request.hashCode())<<32)) : random.nextLong();
+            long r1 = random.nextLong();
+            if (r0<0) r0 = -r0;
+            if (r1<0) r1 = -r1;
+            id=Long.toString(r0,36)+Long.toString(r1,36);
         }
+        return id;
 	}
 }
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,13 +34,15 @@ import com.jfinal.plugin.activerecord.sql.SqlKit;
  */
 public class ActiveRecordPlugin implements IPlugin {
 	
-	private IDataSourceProvider dataSourceProvider = null;
-	private Boolean devMode = null;
+	protected TableBuilder tableBuilder = new TableBuilder();
 	
-	private Config config = null;
+	protected IDataSourceProvider dataSourceProvider = null;
+	protected Boolean devMode = null;
 	
-	private boolean isStarted = false;
-	private List<Table> tableList = new ArrayList<Table>();
+	protected Config config = null;
+	
+	protected volatile boolean isStarted = false;
+	protected List<Table> tableList = new ArrayList<Table>();
 	
 	public ActiveRecordPlugin(String configName, DataSource dataSource, int transactionLevel) {
 		if (StrKit.isBlank(configName)) {
@@ -109,6 +111,11 @@ public class ActiveRecordPlugin implements IPlugin {
 		return this;
 	}
 	
+	public ActiveRecordPlugin addSqlTemplate(com.jfinal.template.source.ISource sqlTemplate) {
+		config.sqlKit.addSqlTemplate(sqlTemplate);
+		return this;
+	}
+	
 	public ActiveRecordPlugin setBaseSqlTemplatePath(String baseSqlTemplatePath) {
 		config.sqlKit.setBaseSqlTemplatePath(baseSqlTemplatePath);
 		return this;
@@ -116,6 +123,10 @@ public class ActiveRecordPlugin implements IPlugin {
 	
 	public SqlKit getSqlKit() {
 		return config.sqlKit;
+	}
+	
+	public com.jfinal.template.Engine getEngine() {
+		return getSqlKit().getEngine();
 	}
 	
 	/**
@@ -170,6 +181,14 @@ public class ActiveRecordPlugin implements IPlugin {
 		return this;
 	}
 	
+	public ActiveRecordPlugin setDbProFactory(IDbProFactory dbProFactory) {
+		if (dbProFactory == null) {
+			throw new IllegalArgumentException("dbProFactory can not be null");
+		}
+		config.dbProFactory = dbProFactory;
+		return this;
+	}
+	
 	/**
 	 * 当使用 create table 语句创建用于开发使用的数据表副本时，假如create table 中使用的
 	 * 复合主键次序不同，那么MappingKitGeneretor 反射生成的复合主键次序也会不同。
@@ -204,9 +223,9 @@ public class ActiveRecordPlugin implements IPlugin {
 			throw new RuntimeException("ActiveRecord start error: ActiveRecordPlugin need DataSource or DataSourceProvider");
 		}
 		
-		config.sqlKit.parseTemplate();
+		config.sqlKit.parseSqlTemplate();
 		
-		new TableBuilder().build(tableList, config);
+		tableBuilder.build(tableList, config);
 		DbKit.addConfig(config);
 		isStarted = true;
 		return true;
@@ -278,6 +297,38 @@ public class ActiveRecordPlugin implements IPlugin {
 	 */
 	public static void useAsDataTransfer() {
 		useAsDataTransfer(new com.jfinal.plugin.activerecord.dialect.MysqlDialect(), IContainerFactory.defaultContainerFactory, new com.jfinal.plugin.activerecord.cache.EhCache());
+	}
+	
+	public Config getConfig() {
+		return config;
+	}
+	
+	/**
+	 * 一般用于配置 TableBuilder 内的 JavaType
+	 * <pre>
+	 * 例如：
+	 *    ActiveRecordPlugin arp = ...;
+	 *    JavaType jt = arp.getTableBuilder().getJavaType();
+	 *    
+	 *    jt.addType(org.postgresql.geometric.PGpoint.class);
+	 *    jt.addType(org.postgresql.geometric.PGbox.class);
+	 *    jt.addType(org.postgresql.geometric.PGcircle.class);
+	 *    jt.addType(org.postgresql.geometric.PGline.class);
+	 *    jt.addType(org.postgresql.geometric.PGlseg.class);
+	 *    jt.addType(org.postgresql.geometric.PGpath.class);
+	 *    jt.addType(org.postgresql.geometric.PGpolygon.class);
+	 * </pre>
+	 */
+	public TableBuilder getTableBuilder() {
+		return tableBuilder;
+	}
+	
+	/**
+	 * 可用于切换 TableBuilder 实现类
+	 */
+	public ActiveRecordPlugin setTableBuilder(TableBuilder tableBuilder) {
+		this.tableBuilder = tableBuilder;
+		return this;
 	}
 }
 

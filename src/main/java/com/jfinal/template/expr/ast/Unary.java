@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.jfinal.template.expr.ast;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import com.jfinal.template.TemplateException;
 import com.jfinal.template.expr.Sym;
 import com.jfinal.template.stat.Location;
@@ -55,7 +56,7 @@ public class Unary extends Expr {
 			throw new TemplateException("The parameter of \"" + op.value() + "\" operator can not be blank", location);
 		}
 		if (! (value instanceof Number) ) {
-			throw new TemplateException(op.value() + " operator only support int long float double BigDecimal type", location);
+			throw new TemplateException(op.value() + " operator only support int long float double short byte BigDecimal BigInteger type", location);
 		}
 		
 		switch (op) {
@@ -78,10 +79,63 @@ public class Unary extends Expr {
 			if (n instanceof BigDecimal) {
             	return ((BigDecimal)n).negate();
 			}
+			if (n instanceof BigInteger) {
+				return ((BigInteger)n).negate();
+			}
+			if (n instanceof Short || n instanceof Byte) {
+				// short、byte 取负时转换为 int 型， java 语言亦如此
+				return Integer.valueOf(-((Number)n).intValue());
+			}
+			
             throw new TemplateException("Unsupported data type: " + n.getClass().getName(), location);
 		default :
 			throw new TemplateException("Unsupported operator: " + op.value(), location);
 		}
+	}
+	
+	/**
+	 * 如果可能的话，将 Unary 表达式转化成 Const 表达式，类似于 ExprParser.buildMapEntry() 需要这种转化来简化实现
+	 * 除了可简化程序外，还起到一定的性能优化作用
+	 * 
+	 * Number : +123 -456 +3.14 -0.12
+	 * Boolean : !true !false
+	 * 
+	 * 特别注意：
+	 * Boolean 的支持并不需要，!true、!false 已在 ExprParser 中被 Logic 表达式接管，在此仅为逻辑上的完备性而添加
+	 */
+	public Expr toConstIfPossible() {
+		if (expr instanceof Const && (op == Sym.SUB || op == Sym.ADD || op == Sym.NOT)) {
+		} else {
+			return this;
+		}
+		
+		Expr ret = this;
+		Const c = (Const)expr;
+		if (op == Sym.SUB) {
+			if (c.isInt()) {
+				ret = new Const(Sym.INT, -c.getInt());
+			} else if (c.isLong()) {
+				ret = new Const(Sym.LONG, -c.getLong());
+			} else if (c.isFloat()) {
+				ret = new Const(Sym.FLOAT, -c.getFloat());
+			} else if (c.isDouble()) {
+				ret = new Const(Sym.DOUBLE, -c.getDouble());
+			}
+		} else if (op == Sym.ADD) {
+			if (c.isNumber()) {
+				ret = c;
+			}
+		} else if (op == Sym.NOT) {
+			if (c.isBoolean()) {
+				ret = c.isTrue() ? Const.FALSE : Const.TRUE;
+			}
+		}
+		
+		return ret;
+	}
+	
+	public String toString() {
+		return op.toString() + expr.toString();
 	}
 }
 

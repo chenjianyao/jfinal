@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.jfinal.render;
 
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -152,16 +153,16 @@ public class FreeMarkerRender extends Render {
 		}
 		
 		PrintWriter writer = null;
-        try {
+		try {
 			Template template = config.getTemplate(view);
 			writer = response.getWriter();
 			template.process(data, writer);		// Merge the data-model and the template
+			writer.flush();
 		} catch (Exception e) {
+		    if (e instanceof IOException) {
+		        close(writer);
+		    }
 			throw new RenderException(e);
-		}
-		finally {
-			if (writer != null)
-				writer.close();
 		}
 	}
 }

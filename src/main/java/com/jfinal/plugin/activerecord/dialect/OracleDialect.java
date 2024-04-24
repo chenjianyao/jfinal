@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,13 +22,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import com.jfinal.plugin.activerecord.CPI;
 import com.jfinal.plugin.activerecord.Record;
 import com.jfinal.plugin.activerecord.Table;
+import com.jfinal.plugin.activerecord.builder.TimestampProcessedModelBuilder;
+import com.jfinal.plugin.activerecord.builder.TimestampProcessedRecordBuilder;
 
 /**
  * OracleDialect.
  */
 public class OracleDialect extends Dialect {
+	
+	public OracleDialect() {
+		this.modelBuilder = TimestampProcessedModelBuilder.me;
+		this.recordBuilder = TimestampProcessedRecordBuilder.me;
+	}
 	
 	public String forTableBuilderDoBuild(String tableName) {
 		return "select * from " + tableName + " where rownum < 1";
@@ -36,7 +44,7 @@ public class OracleDialect extends Dialect {
 	
 	// insert into table (id,name) values(seq.nextval, ？)
 	public void forModelSave(Table table, Map<String, Object> attrs, StringBuilder sql, List<Object> paras) {
-		sql.append("insert into ").append(table.getName()).append("(");
+		sql.append("insert into ").append(table.getName()).append('(');
 		StringBuilder temp = new StringBuilder(") values(");
 		String[] pKeys = table.getPrimaryKey();
 		int count = 0;
@@ -52,12 +60,12 @@ public class OracleDialect extends Dialect {
 				if (value instanceof String && isPrimaryKey(colName, pKeys) && ((String)value).endsWith(".nextval")) {
 				    temp.append(value);
 				} else {
-				    temp.append("?");
+				    temp.append('?');
 				    paras.add(value);
 				}
 			}
 		}
-		sql.append(temp.toString()).append(")");
+		sql.append(temp.toString()).append(')');
 	}
 	
 	public String forModelDeleteById(Table table) {
@@ -145,7 +153,7 @@ public class OracleDialect extends Dialect {
 		trimPrimaryKeys(pKeys);
 		
 		sql.append("insert into ");
-		sql.append(tableName).append("(");
+		sql.append(tableName).append('(');
 		StringBuilder temp = new StringBuilder();
 		temp.append(") values(");
 		
@@ -162,21 +170,24 @@ public class OracleDialect extends Dialect {
 			if (value instanceof String && isPrimaryKey(colName, pKeys) && ((String)value).endsWith(".nextval")) {
 			    temp.append(value);
 			} else {
-				temp.append("?");
+				temp.append('?');
 				paras.add(value);
 			}
 		}
-		sql.append(temp.toString()).append(")");
+		sql.append(temp.toString()).append(')');
 	}
 	
 	public void forDbUpdate(String tableName, String[] pKeys, Object[] ids, Record record, StringBuilder sql, List<Object> paras) {
 		tableName = tableName.trim();
 		trimPrimaryKeys(pKeys);
 		
+		// Record 新增支持 modifyFlag
+		Set<String> modifyFlag = CPI.getModifyFlag(record);
+		
 		sql.append("update ").append(tableName).append(" set ");
 		for (Entry<String, Object> e: record.getColumns().entrySet()) {
 			String colName = e.getKey();
-			if (!isPrimaryKey(colName, pKeys)) {
+			if (modifyFlag.contains(colName) && !isPrimaryKey(colName, pKeys)) {
 				if (paras.size() > 0) {
 					sql.append(", ");
 				}
@@ -194,12 +205,12 @@ public class OracleDialect extends Dialect {
 		}
 	}
 	
-	public String forPaginate(int pageNumber, int pageSize, String select, String sqlExceptSelect) {
+	public String forPaginate(int pageNumber, int pageSize, StringBuilder findSql) {
 		int start = (pageNumber - 1) * pageSize;
 		int end = pageNumber * pageSize;
 		StringBuilder ret = new StringBuilder();
 		ret.append("select * from ( select row_.*, rownum rownum_ from (  ");
-		ret.append(select).append(" ").append(sqlExceptSelect);
+		ret.append(findSql);
 		ret.append(" ) row_ where rownum <= ").append(end).append(") table_alias");
 		ret.append(" where table_alias.rownum_ > ").append(start);
 		return ret.toString();
@@ -210,29 +221,11 @@ public class OracleDialect extends Dialect {
 	}
 	
 	public void fillStatement(PreparedStatement pst, List<Object> paras) throws SQLException {
-		for (int i=0, size=paras.size(); i<size; i++) {
-			Object value = paras.get(i);
-			if (value instanceof java.sql.Date) {
-				pst.setDate(i + 1, (java.sql.Date)value);
-			} else if (value instanceof java.sql.Timestamp) {
-				pst.setTimestamp(i + 1, (java.sql.Timestamp)value);
-			} else {
-				pst.setObject(i + 1, value);
-			}
-		}
+		fillStatementHandleDateType(pst, paras);
 	}
 	
 	public void fillStatement(PreparedStatement pst, Object... paras) throws SQLException {
-		for (int i=0; i<paras.length; i++) {
-			Object value = paras[i];
-			if (value instanceof java.sql.Date) {
-				pst.setDate(i + 1, (java.sql.Date)value);
-			} else if (value instanceof java.sql.Timestamp) {
-				pst.setTimestamp(i + 1, (java.sql.Timestamp)value);
-			} else {
-				pst.setObject(i + 1, value);
-			}
-		}
+		fillStatementHandleDateType(pst, paras);
 	}
 	
 	public String getDefaultPrimaryKey() {

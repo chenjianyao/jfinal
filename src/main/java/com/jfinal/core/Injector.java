@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.Map.Entry;
 import javax.servlet.http.HttpServletRequest;
+import com.jfinal.core.converter.TypeConverter;
 import com.jfinal.kit.StrKit;
 import com.jfinal.plugin.activerecord.ActiveRecordException;
 import com.jfinal.plugin.activerecord.Model;
@@ -50,10 +51,10 @@ public class Injector {
 	}
 	
 	@SuppressWarnings("unchecked")
-	public static final <T> T injectBean(Class<T> beanClass, String beanName, HttpServletRequest request, boolean skipConvertError) {
+	public static <T> T injectBean(Class<T> beanClass, String beanName, HttpServletRequest request, boolean skipConvertError) {
 		Object bean = createInstance(beanClass);
 		String modelNameAndDot = StrKit.notBlank(beanName) ? beanName + "." : null;
-		
+		TypeConverter converter = TypeConverter.me();
 		Map<String, String[]> parasMap = request.getParameterMap();
 		Method[] methods = beanClass.getMethods();
 		for (Method method : methods) {
@@ -71,11 +72,12 @@ public class Injector {
 			if (parasMap.containsKey(paraName)) {
 				try {
 					String paraValue = request.getParameter(paraName);
-					Object value = paraValue != null ? TypeConverter.convert(types[0], paraValue) : null;
+					Object value = paraValue != null ? converter.convert(types[0], paraValue) : null;
 					method.invoke(bean, value);
 				} catch (Exception e) {
 					if (skipConvertError == false) {
-						throw new RuntimeException(e);
+						// throw new RuntimeException(e);
+						throw new RuntimeException("Can not convert parameter: " + paraName, e);
 					}
 				}
 			}
@@ -85,7 +87,7 @@ public class Injector {
 	}
 	
 	@SuppressWarnings("unchecked")
-	public static final <T> T injectModel(Class<T> modelClass, String modelName, HttpServletRequest request, boolean skipConvertError) {
+	public static <T> T injectModel(Class<T> modelClass, String modelName, HttpServletRequest request, boolean skipConvertError) {
 		Object temp = createInstance(modelClass);
 		if (temp instanceof Model == false) {
 			throw new IllegalArgumentException("getModel only support class of Model, using getBean for other class.");
@@ -100,6 +102,7 @@ public class Injector {
 		
 		String modelNameAndDot = StrKit.notBlank(modelName) ? modelName + "." : null;
 		Map<String, String[]> parasMap = request.getParameterMap();
+		TypeConverter converter = TypeConverter.me();
 		// 对 paraMap进行遍历而不是对table.getColumnTypeMapEntrySet()进行遍历，以便支持 CaseInsensitiveContainerFactory
 		// 以及支持界面的 attrName有误时可以感知并抛出异常避免出错
 		for (Entry<String, String[]> entry : parasMap.entrySet()) {
@@ -128,7 +131,7 @@ public class Injector {
 				String[] paraValueArray = entry.getValue();
 				String paraValue = (paraValueArray != null && paraValueArray.length > 0) ? paraValueArray[0] : null;
 				
-				Object value = paraValue != null ? TypeConverter.convert(colType, paraValue) : null;
+				Object value = paraValue != null ? converter.convert(colType, paraValue) : null;
 				model.set(attrName, value);
 			} catch (Exception e) {
 				if (skipConvertError == false) {

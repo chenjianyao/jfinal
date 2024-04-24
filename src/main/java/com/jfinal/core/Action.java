@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@ package com.jfinal.core;
 
 import java.lang.reflect.Method;
 import com.jfinal.aop.Interceptor;
+import com.jfinal.core.paragetter.ParaProcessor;
+import com.jfinal.core.paragetter.ParaProcessorBuilder;
 
 /**
  * Action
@@ -25,29 +27,44 @@ import com.jfinal.aop.Interceptor;
 public class Action {
 	
 	private final Class<? extends Controller> controllerClass;
-	private final String controllerKey;
+	private final String controllerPath;
 	private final String actionKey;
 	private final Method method;
 	private final String methodName;
 	private final Interceptor[] interceptors;
 	private final String viewPath;
 	
-	public Action(String controllerKey, String actionKey, Class<? extends Controller> controllerClass, Method method, String methodName, Interceptor[] interceptors, String viewPath) {
-		this.controllerKey = controllerKey;
+	private final ParaProcessor parameterGetter;
+	
+	public Action(String controllerPath, String actionKey, Class<? extends Controller> controllerClass, Method method, String methodName, Interceptor[] interceptors, String viewPath) {
+		this.controllerPath = controllerPath;
 		this.actionKey = actionKey;
 		this.controllerClass = controllerClass;
 		this.method = method;
 		this.methodName = methodName;
 		this.interceptors = interceptors;
 		this.viewPath = viewPath;
+		
+		this.parameterGetter = ParaProcessorBuilder.me.build(controllerClass, method);
+		
+		// 支持高版本 JDK 的安全策略
+		method.setAccessible(true);
 	}
 	
 	public Class<? extends Controller> getControllerClass() {
 		return controllerClass;
 	}
 	
+	public String getControllerPath() {
+		return controllerPath;
+	}
+	
+	/**
+	 * 该方法已改名为 getControllerPath()
+	 */
+	@Deprecated
 	public String getControllerKey() {
-		return controllerKey;
+		return controllerPath;
 	}
 	
 	public String getActionKey() {
@@ -68,6 +85,14 @@ public class Action {
 	
 	public String getMethodName() {
 		return methodName;
+	}
+	
+	public ParaProcessor getParameterGetter() {
+		return parameterGetter;
+	}
+	
+	public String toString() {
+		return actionKey;
 	}
 }
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,14 +28,22 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * ModelBuilder.
  */
 public class ModelBuilder {
 	
+	public static final ModelBuilder me = new ModelBuilder();
+	
+	@SuppressWarnings({"rawtypes"})
+	public <T> List<T> build(ResultSet rs, Class<? extends Model> modelClass) throws SQLException, ReflectiveOperationException {
+		return build(rs, modelClass, null);
+	}
+	
 	@SuppressWarnings({"rawtypes", "unchecked"})
-	public static final <T> List<T> build(ResultSet rs, Class<? extends Model> modelClass) throws SQLException, InstantiationException, IllegalAccessException {
+	public <T> List<T> build(ResultSet rs, Class<? extends Model> modelClass, Function<T, Boolean> func) throws SQLException, ReflectiveOperationException {
 		List<T> result = new ArrayList<T>();
 		ResultSetMetaData rsmd = rs.getMetaData();
 		int columnCount = rsmd.getColumnCount();
@@ -44,35 +52,46 @@ public class ModelBuilder {
 		buildLabelNamesAndTypes(rsmd, labelNames, types);
 		while (rs.next()) {
 			Model<?> ar = modelClass.newInstance();
-			Map<String, Object> attrs = ar.getAttrs();
+			Map<String, Object> attrs = ar._getAttrs();
 			for (int i=1; i<=columnCount; i++) {
 				Object value;
-				if (types[i] < Types.BLOB)
+				if (types[i] < Types.BLOB) {
 					value = rs.getObject(i);
-				else if (types[i] == Types.CLOB)
-					value = handleClob(rs.getClob(i));
-				else if (types[i] == Types.NCLOB)
-					value = handleClob(rs.getNClob(i));
-				else if (types[i] == Types.BLOB)
-					value = handleBlob(rs.getBlob(i));
-				else
-					value = rs.getObject(i);
+				} else {
+					if (types[i] == Types.CLOB) {
+						value = handleClob(rs.getClob(i));
+					} else if (types[i] == Types.NCLOB) {
+						value = handleClob(rs.getNClob(i));
+					} else if (types[i] == Types.BLOB) {
+						value = handleBlob(rs.getBlob(i));
+					} else {
+						value = rs.getObject(i);
+					}
+				}
 				
 				attrs.put(labelNames[i], value);
 			}
-			result.add((T)ar);
+			
+			if (func == null) {
+				result.add((T)ar);
+			} else {
+				if ( ! func.apply((T)ar) ) {
+					break ;
+				}
+			}
 		}
 		return result;
 	}
 	
-	private static final void buildLabelNamesAndTypes(ResultSetMetaData rsmd, String[] labelNames, int[] types) throws SQLException {
+	public void buildLabelNamesAndTypes(ResultSetMetaData rsmd, String[] labelNames, int[] types) throws SQLException {
 		for (int i=1; i<labelNames.length; i++) {
+			// 备忘：getColumnLabel 获取 sql as 子句指定的名称而非字段真实名称
 			labelNames[i] = rsmd.getColumnLabel(i);
 			types[i] = rsmd.getColumnType(i);
 		}
 	}
 	
-	public static byte[] handleBlob(Blob blob) throws SQLException {
+	public byte[] handleBlob(Blob blob) throws SQLException {
 		if (blob == null)
 			return null;
 		
@@ -95,7 +114,7 @@ public class ModelBuilder {
 		}
 	}
 	
-	public static String handleClob(Clob clob) throws SQLException {
+	public String handleClob(Clob clob) throws SQLException {
 		if (clob == null)
 			return null;
 		
@@ -120,7 +139,7 @@ public class ModelBuilder {
 	
 	/* backup before use columnType
 	@SuppressWarnings({"rawtypes", "unchecked"})
-	static final <T> List<T> build(ResultSet rs, Class<? extends Model> modelClass) throws SQLException, InstantiationException, IllegalAccessException {
+	static final <T> List<T> build(ResultSet rs, Class<? extends Model> modelClass) throws SQLException, ReflectiveOperationException {
 		List<T> result = new ArrayList<T>();
 		ResultSetMetaData rsmd = rs.getMetaData();
 		int columnCount = rsmd.getColumnCount();
@@ -147,7 +166,7 @@ public class ModelBuilder {
 	
 	/* backup
 	@SuppressWarnings({"rawtypes", "unchecked"})
-	static final <T> List<T> build(ResultSet rs, Class<? extends Model> modelClass) throws SQLException, InstantiationException, IllegalAccessException {
+	static final <T> List<T> build(ResultSet rs, Class<? extends Model> modelClass) throws SQLException, ReflectiveOperationException {
 		List<T> result = new ArrayList<T>();
 		ResultSetMetaData rsmd = rs.getMetaData();
 		List<String> labelNames = getLabelNames(rsmd);

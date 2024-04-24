@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,14 +23,21 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * RecordBuilder.
  */
 public class RecordBuilder {
 	
+	public static final RecordBuilder me = new RecordBuilder();
+	
+	public List<Record> build(Config config, ResultSet rs) throws SQLException {
+		return build(config, rs, null);
+	}
+	
 	@SuppressWarnings("unchecked")
-	public static final List<Record> build(Config config, ResultSet rs) throws SQLException {
+	public List<Record> build(Config config, ResultSet rs, Function<Record, Boolean> func) throws SQLException {
 		List<Record> result = new ArrayList<Record>();
 		ResultSetMetaData rsmd = rs.getMetaData();
 		int columnCount = rsmd.getColumnCount();
@@ -43,26 +50,37 @@ public class RecordBuilder {
 			Map<String, Object> columns = record.getColumns();
 			for (int i=1; i<=columnCount; i++) {
 				Object value;
-				if (types[i] < Types.BLOB)
+				if (types[i] < Types.BLOB) {
 					value = rs.getObject(i);
-				else if (types[i] == Types.CLOB)
-					value = ModelBuilder.handleClob(rs.getClob(i));
-				else if (types[i] == Types.NCLOB)
-					value = ModelBuilder.handleClob(rs.getNClob(i));
-				else if (types[i] == Types.BLOB)
-					value = ModelBuilder.handleBlob(rs.getBlob(i));
-				else
-					value = rs.getObject(i);
+				} else {
+					if (types[i] == Types.CLOB) {
+						value = ModelBuilder.me.handleClob(rs.getClob(i));
+					} else if (types[i] == Types.NCLOB) {
+						value = ModelBuilder.me.handleClob(rs.getNClob(i));
+					} else if (types[i] == Types.BLOB) {
+						value = ModelBuilder.me.handleBlob(rs.getBlob(i));
+					} else {
+						value = rs.getObject(i);
+					}
+				}
 				
 				columns.put(labelNames[i], value);
 			}
-			result.add(record);
+			
+			if (func == null) {
+				result.add(record);
+			} else {
+				if ( ! func.apply(record) ) {
+					break ;
+				}
+			}
 		}
 		return result;
 	}
 	
-	private static final void buildLabelNamesAndTypes(ResultSetMetaData rsmd, String[] labelNames, int[] types) throws SQLException {
+	public void buildLabelNamesAndTypes(ResultSetMetaData rsmd, String[] labelNames, int[] types) throws SQLException {
 		for (int i=1; i<labelNames.length; i++) {
+			// 备忘：getColumnLabel 获取 sql as 子句指定的名称而非字段真实名称
 			labelNames[i] = rsmd.getColumnLabel(i);
 			types[i] = rsmd.getColumnType(i);
 		}

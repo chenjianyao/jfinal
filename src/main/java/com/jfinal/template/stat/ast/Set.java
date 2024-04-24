@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,10 @@
 
 package com.jfinal.template.stat.ast;
 
-import java.io.Writer;
 import com.jfinal.template.Env;
-import com.jfinal.template.expr.ast.Assign;
 import com.jfinal.template.expr.ast.Expr;
 import com.jfinal.template.expr.ast.ExprList;
+import com.jfinal.template.io.Writer;
 import com.jfinal.template.stat.Location;
 import com.jfinal.template.stat.ParseException;
 import com.jfinal.template.stat.Scope;
@@ -36,24 +35,26 @@ import com.jfinal.template.stat.Scope;
  */
 public class Set extends Stat {
 	
-	private ExprList exprList;
+	private Expr expr;
 	
 	public Set(ExprList exprList, Location location) {
 		if (exprList.length() == 0) {
 			throw new ParseException("The parameter of #set directive can not be blank", location);
 		}
 		
+		/* 放开对表达式类型的限定
 		for (Expr expr : exprList.getExprArray()) {
-			if ( !(expr instanceof Assign) ) {
+			if ( !(expr instanceof Assign || expr instanceof IncDec) ) {
 				throw new ParseException("#set directive only supports assignment expressions", location);
 			}
-		}
-		this.exprList = exprList;
+		}*/
+		
+		this.expr = exprList.getActualExpr();
 	}
 	
 	public void exec(Env env, Scope scope, Writer writer) {
 		scope.getCtrl().setWisdomAssignment();
-		exprList.eval(scope);
+		expr.eval(scope);
 	}
 }
 

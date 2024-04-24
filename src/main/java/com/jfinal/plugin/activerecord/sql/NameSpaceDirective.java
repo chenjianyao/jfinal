@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
 
 package com.jfinal.plugin.activerecord.sql;
 
-import java.io.Writer;
 import com.jfinal.template.Directive;
 import com.jfinal.template.Env;
 import com.jfinal.template.TemplateException;
 import com.jfinal.template.expr.ast.Const;
 import com.jfinal.template.expr.ast.Expr;
 import com.jfinal.template.expr.ast.ExprList;
+import com.jfinal.template.io.Writer;
 import com.jfinal.template.stat.ParseException;
 import com.jfinal.template.stat.Scope;
 
@@ -36,15 +36,19 @@ public class NameSpaceDirective extends Directive {
 	private String nameSpace;
 	
 	public void setExprList(ExprList exprList) {
-		Expr[] exprs = exprList.getExprArray();
-		if (exprs.length == 0 || exprs.length > 1) {
-			throw new ParseException("only one parameter allowed for #namespace directive", location);
+		if (exprList.length() == 0) {
+			throw new ParseException("The parameter of #namespace directive can not be blank", location);
 		}
-		if (!(exprs[0] instanceof Const) || !((Const)exprs[0]).isStr()) {
-			throw new ParseException("the parameter of #namespace directive must be String", location);
+		if (exprList.length() > 1) {
+			throw new ParseException("Only one parameter allowed for #namespace directive", location);
+		}
+		Expr expr = exprList.getExpr(0);
+		if (expr instanceof Const && ((Const)expr).isStr()) {
+		} else {
+			throw new ParseException("The parameter of #namespace directive must be String", location);
 		}
 		
-		this.nameSpace = ((Const)exprs[0]).getStr();
+		this.nameSpace = ((Const)expr).getStr();
 	}
 	
 	public void exec(Env env, Scope scope, Writer writer) {

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,6 @@
 
 package com.jfinal.template.expr.ast;
 
-import java.lang.reflect.Array;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.Map;
 import com.jfinal.template.TemplateException;
 import com.jfinal.template.expr.Sym;
 import com.jfinal.template.stat.Location;
@@ -95,38 +91,22 @@ public class Logic extends Expr {
 	 * 规则：
 	 * 1：null 返回 false
 	 * 2：boolean 类型，原值返回
-	 * 3：Map、Connection(List被包括在内) 返回 size() > 0
-	 * 4：数组，返回 length > 0
-	 * 5：String、StringBuilder、StringBuffer 等继承自 CharSequence 类的对象，返回 length > 0
-	 * 6：Number 类型，返回 intValue() != 0
-	 * 7：Iterator 返回 hasNext() 值
-	 * 8：其它返回 true
+	 * 3：String、StringBuilder 等一切继承自 CharSequence 类的对象，返回 length > 0
+	 * 4：其它返回 true
 	 */
 	public static boolean isTrue(Object v) {
 		if (v == null) {
 			return false;
 		}
+		
 		if (v instanceof Boolean) {
 			return (Boolean)v;
 		}
-		if (v instanceof Collection) {
-			return ((Collection<?>)v).size() > 0;
-		}
-		if (v instanceof Map) {
-			return ((Map<?, ?>)v).size() > 0;
-		}
-		if (v.getClass().isArray()) {
-			return Array.getLength(v) > 0;
-		}
+		
 		if (v instanceof CharSequence) {
 			return ((CharSequence)v).length() > 0;
 		}
-		if (v instanceof Number) {
-			return ((Number)v).intValue() != 0;
-		}
-		if (v instanceof Iterator) {
-			return ((Iterator<?>)v).hasNext();
-		}
+		
 		return true;
 	}
 	

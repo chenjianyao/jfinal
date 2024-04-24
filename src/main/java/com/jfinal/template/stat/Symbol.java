@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,11 +23,11 @@ import java.util.Map;
  * Symbol
  */
 enum Symbol {
-	
+
 	TEXT("text", false),
-	
+
 	OUTPUT("output", true),
-	
+
 	DEFINE("define", true),
 	CALL("call", true),
 	CALL_IF_DEFINED("callIfDefined", true),
@@ -35,7 +35,7 @@ enum Symbol {
 	SET_LOCAL("setLocal", true),
 	SET_GLOBAL("setGlobal", true),
 	INCLUDE("include", true),
-	
+
 	FOR("for", true),
 	IF("if", true),
 	ELSEIF("elseif", true),
@@ -44,21 +44,22 @@ enum Symbol {
 	CONTINUE("continue", false),
 	BREAK("break", false),
 	RETURN("return", false),
-	
+	RETURN_IF("returnIf", true),
+
+	SWITCH("switch", true),
+	CASE("case", true),
+	DEFAULT("default", false),
+
 	ID("ID", false),				// 标识符：下划线或字母开头 ^[A-Za-z_][A-Za-z0-9_]*$
 	PARA("PARA", false),
-	
+
 	EOF("EOF", false);
-	
+
 	private final String name;
 	private final boolean hasPara;	// 是否有参
-	
-	/**
-	 * Lexer 中确定为系统指令以后，必须得到正确的后续 Token 序列，否则报异常
-	 * 扩展指令在得到 # id ( 序列以后才要求得到正确的后续 Token 序列，否则仅仅 return fail()
-	 */
+
 	@SuppressWarnings("serial")
-	private static final Map<String, Symbol> keywords = new HashMap<String, Symbol>() {{
+	private static final Map<String, Symbol> keywords = new HashMap<String, Symbol>(64) {{
 		put(Symbol.IF.getName(), IF);
 		put(Symbol.ELSEIF.getName(), ELSEIF);
 		put(Symbol.ELSE.getName(), ELSE);
@@ -67,35 +68,40 @@ enum Symbol {
 		put(Symbol.BREAK.getName(), BREAK);
 		put(Symbol.CONTINUE.getName(), CONTINUE);
 		put(Symbol.RETURN.getName(), RETURN);
-		
+		put(Symbol.RETURN_IF.getName(), RETURN_IF);
+
+		put(Symbol.SWITCH.getName(), SWITCH);
+		put(Symbol.CASE.getName(), CASE);
+		put(Symbol.DEFAULT.getName(), DEFAULT);
+
 		put(Symbol.DEFINE.getName(), DEFINE);
 		put(Symbol.SET.getName(), SET);
 		put(Symbol.SET_LOCAL.getName(), SET_LOCAL);
 		put(Symbol.SET_GLOBAL.getName(), SET_GLOBAL);
 		put(Symbol.INCLUDE.getName(), INCLUDE);
 	}};
-	
+
 	private Symbol(String name, boolean hasPara) {
 		this.name = name;
 		this.hasPara = hasPara;
 	}
-	
+
 	public String getName() {
 		return name;
 	}
-	
+
 	public String toString() {
 		return name;
 	}
-	
+
 	boolean hasPara() {
 		return hasPara;
 	}
-	
+
 	boolean noPara() {
 		return !hasPara;
 	}
-	
+
 	public static Symbol getKeywordSym(String name) {
 		return keywords.get(name);
 	}

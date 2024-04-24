@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,7 @@
 
 package com.jfinal.kit;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
@@ -51,7 +49,7 @@ public class HttpKit {
 	/**
 	 * https 域名校验
 	 */
-	private class TrustAnyHostnameVerifier implements HostnameVerifier {
+	private static class TrustAnyHostnameVerifier implements HostnameVerifier {
 		public boolean verify(String hostname, SSLSession session) {
 			return true;
 		}
@@ -60,7 +58,7 @@ public class HttpKit {
 	/**
 	 * https 证书管理
 	 */
-	private class TrustAnyTrustManager implements X509TrustManager {
+	private static class TrustAnyTrustManager implements X509TrustManager {
 		public X509Certificate[] getAcceptedIssuers() {
 			return null;  
 		}
@@ -74,12 +72,15 @@ public class HttpKit {
 	private static final String POST = "POST";
 	private static String CHARSET = "UTF-8";
 	
+	private static int connectTimeout = 19000;	// 连接超时，单位毫秒
+	private static int readTimeout = 19000;		// 读取超时，单位毫秒
+	
 	private static final SSLSocketFactory sslSocketFactory = initSSLSocketFactory();
-	private static final TrustAnyHostnameVerifier trustAnyHostnameVerifier = new HttpKit().new TrustAnyHostnameVerifier();
+	private static final TrustAnyHostnameVerifier trustAnyHostnameVerifier = new HttpKit.TrustAnyHostnameVerifier();
 	
 	private static SSLSocketFactory initSSLSocketFactory() {
 		try {
-			TrustManager[] tm = {new HttpKit().new TrustAnyTrustManager() };
+			TrustManager[] tm = {new HttpKit.TrustAnyTrustManager() };
 			SSLContext sslContext = SSLContext.getInstance("TLS");	// ("TLS", "SunJSSE");
 			sslContext.init(null, tm, new java.security.SecureRandom());
 			return sslContext.getSocketFactory();
@@ -96,6 +97,14 @@ public class HttpKit {
 		HttpKit.CHARSET = charSet;
 	}
 	
+	public static void setConnectTimeout(int connectTimeout) {
+		HttpKit.connectTimeout = connectTimeout;
+	}
+	
+	public static void setReadTimeout(int readTimeout) {
+		HttpKit.readTimeout = readTimeout;
+	}
+	
 	private static HttpURLConnection getHttpConnection(String url, String method, Map<String, String> headers) throws IOException, NoSuchAlgorithmException, NoSuchProviderException, KeyManagementException {
 		URL _url = new URL(url);
 		HttpURLConnection conn = (HttpURLConnection)_url.openConnection();
@@ -108,15 +117,17 @@ public class HttpKit {
 		conn.setDoOutput(true);
 		conn.setDoInput(true);
 		
-		conn.setConnectTimeout(19000);
-		conn.setReadTimeout(19000);
+		conn.setConnectTimeout(connectTimeout);
+		conn.setReadTimeout(readTimeout);
 		
 		conn.setRequestProperty("Content-Type","application/x-www-form-urlencoded");
 		conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/33.0.1750.146 Safari/537.36");
 		
-		if (headers != null && !headers.isEmpty())
-			for (Entry<String, String> entry : headers.entrySet())
+		if (headers != null && !headers.isEmpty()) {
+			for (Entry<String, String> entry : headers.entrySet()) {
 				conn.setRequestProperty(entry.getKey(), entry.getValue());
+			}
+		}
 		
 		return conn;
 	}
@@ -158,10 +169,12 @@ public class HttpKit {
 			conn = getHttpConnection(buildUrlWithQueryString(url, queryParas), POST, headers);
 			conn.connect();
 			
-			OutputStream out = conn.getOutputStream();
-			out.write(data != null ? data.getBytes(CHARSET) : null);
-			out.flush();
-			out.close();
+			if (data != null) {
+				OutputStream out = conn.getOutputStream();
+				out.write(data.getBytes(CHARSET));
+				out.flush();
+				out.close();
+			}
 			
 			return readResponseString(conn);
 		}
@@ -188,28 +201,16 @@ public class HttpKit {
 	}
 	
 	private static String readResponseString(HttpURLConnection conn) {
-		StringBuilder sb = new StringBuilder();
-		InputStream inputStream = null;
-		try {
-			inputStream = conn.getInputStream();
-			BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, CHARSET));
-			String line = null;
-			while ((line = reader.readLine()) != null){
-				sb.append(line).append("\n");
+		try (InputStreamReader isr = new InputStreamReader(conn.getInputStream(), CHARSET)) {
+			StringBuilder ret = new StringBuilder();
+			char[] buf = new char[1024];
+			for (int num; (num = isr.read(buf, 0, buf.length)) != -1;) {
+				ret.append(buf, 0, num);
 			}
-			return sb.toString();
-		}
-		catch (Exception e) {
+			return ret.toString();
+			
+		} catch (Exception e) {
 			throw new RuntimeException(e);
-		}
-		finally {
-			if (inputStream != null) {
-				try {
-					inputStream.close();
-				} catch (IOException e) {
-					LogKit.error(e.getMessage(), e);
-				}
-			}
 		}
 	}
 	
@@ -217,57 +218,76 @@ public class HttpKit {
 	 * Build queryString of the url
 	 */
 	private static String buildUrlWithQueryString(String url, Map<String, String> queryParas) {
-		if (queryParas == null || queryParas.isEmpty())
+		if (queryParas == null || queryParas.isEmpty()) {
 			return url;
+		}
 		
 		StringBuilder sb = new StringBuilder(url);
 		boolean isFirst;
-		if (!url.contains("?")) {
+		if (url.indexOf('?') == -1) {
 			isFirst = true;
-			sb.append("?");
+			sb.append('?');
 		}
 		else {
 			isFirst = false;
 		}
 		
 		for (Entry<String, String> entry : queryParas.entrySet()) {
-			if (isFirst) isFirst = false;	
-			else sb.append("&");
+			if (isFirst) {
+				isFirst = false;
+			} else {
+				sb.append('&');
+			}
 			
 			String key = entry.getKey();
 			String value = entry.getValue();
-			if (StrKit.notBlank(value))
+			if (StrKit.notBlank(value)) {
 				try {value = URLEncoder.encode(value, CHARSET);} catch (UnsupportedEncodingException e) {throw new RuntimeException(e);}
-			sb.append(key).append("=").append(value);
+			}
+			sb.append(key).append('=').append(value);
 		}
 		return sb.toString();
 	}
 	
 	public static String readData(HttpServletRequest request) {
-		BufferedReader br = null;
 		try {
-			StringBuilder result = new StringBuilder();
-			br = request.getReader();
-			for (String line; (line=br.readLine())!=null;) {
-				if (result.length() > 0) {
-					result.append("\n");
-				}
-				result.append(line);
+			String ce = request.getCharacterEncoding();
+			InputStreamReader isr = new InputStreamReader(request.getInputStream(), ce != null ? ce : CHARSET);
+			StringBuilder ret = new StringBuilder();
+			char[] buf = new char[1024];
+			for (int num; (num = isr.read(buf, 0, buf.length)) != -1;) {
+				ret.append(buf, 0, num);
 			}
-
-			return result.toString();
+			return ret.toString();
+			
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
+		/* 去掉 close() 否则后续 ActionReporter 中的 getPara() 在部分 tomcat 中会报 IOException : Stream closed
 		finally {
-			if (br != null)
+			if (br != null) {
 				try {br.close();} catch (IOException e) {LogKit.error(e.getMessage(), e);}
-		}
+			}
+		}*/
 	}
 	
 	@Deprecated
 	public static String readIncommingRequestData(HttpServletRequest request) {
 		return readData(request);
+	}
+	
+	/**
+	 * 检测是否为 https 请求
+	 * 
+	 * nginx 代理实现 https 的场景，需要对 nginx 进行如下配置：
+	 *     proxy_set_header X-Forwarded-Proto https;
+	 * 或者配置:
+	 *     proxy_set_header X-Forwarded-Proto $scheme;
+	 */
+	public static boolean isHttps(HttpServletRequest request) {
+		return  "https".equalsIgnoreCase(request.getHeader("X-Forwarded-Proto"))
+				||
+				"https".equalsIgnoreCase(request.getScheme());
 	}
 }
 

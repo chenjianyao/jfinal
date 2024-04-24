@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,13 +21,16 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import com.jfinal.aop.Interceptor;
 import com.jfinal.aop.Invocation;
 import com.jfinal.core.Controller;
 import com.jfinal.kit.LogKit;
+import com.jfinal.kit.Ret;
 import com.jfinal.kit.StrKit;
+import com.jfinal.kit.TimeKit;
 
 /**
  * Validator.
@@ -44,6 +47,56 @@ public abstract class Validator implements Interceptor {
 	protected static final String DEFAULT_DATE_PATTERN = "yyyy-MM-dd";
 	protected static final String emailAddressPattern = "\\b(^['_A-Za-z0-9-]+(\\.['_A-Za-z0-9-]+)*@([A-Za-z0-9-])+(\\.[A-Za-z0-9-]+)*((\\.[A-Za-z0-9]{2,})|(\\.[A-Za-z0-9]{2,}\\.[A-Za-z0-9]{2,}))$)\\b";
 	
+	protected Ret ret = null;
+	
+	/**
+	 * Add message when validate failure.
+	 */
+	protected void addError(String errorKey, String errorMessage) {
+		invalid = true;
+		
+		if (ret != null) {
+			ret.set(errorKey, errorMessage);
+		} else {
+			controller.setAttr(errorKey, errorMessage);
+		}
+		
+		if (shortCircuit) {
+			throw new ValidateException();
+		}
+	}
+	
+	/**
+	 * 注入 Ret 对象，验证结果将被存放在其中，以便在 handleError 中使用 getRet()：
+	 *     controller.renderJson(getRet());
+	 * 
+	 * <pre>
+	 * 用法：
+	 * validate(Controller c) 中调用 setRet(Ret.fail());
+	 * handleError(Controller c) 中调用 c.renderJson(getRet());
+	 * </pre>
+	 */
+	protected void setRet(Ret ret) {
+		Objects.requireNonNull(ret, "ret can not be null");
+		this.ret = ret;
+	}
+	
+	/**
+	 * 便于在 handleError 中使用 controller.renderJson(getRet());
+	 */
+	protected Ret getRet() {
+		if (ret == null) {
+			throw new IllegalStateException("You should invoke setRet(Ret.fail()) method in validate(Controller c) first");
+		}
+		return ret;
+	}
+	
+	/**
+	 * 设置短路验证. 默认值为 false
+	 * 短路验证是指在验证过程中，只要碰到验证失败则立即停止后续验证并返回
+	 * 非短路验证是指验证操作一直持续到结束，无论中途有没有碰到验证失败
+	 * @param shortCircuit true 表示短路型验证
+	 */
 	protected void setShortCircuit(boolean shortCircuit) {
 		this.shortCircuit = shortCircuit;
 	}
@@ -60,6 +113,11 @@ public abstract class Validator implements Interceptor {
 		Validator validator = null;
 		try {
 			validator = getClass().newInstance();
+			
+			if (com.jfinal.aop.AopManager.me().isInjectDependency()) {
+				com.jfinal.aop.Aop.inject(validator);
+			}
+			
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}
@@ -95,17 +153,6 @@ public abstract class Validator implements Interceptor {
 	protected abstract void handleError(Controller c);
 	
 	/**
-	 * Add message when validate failure.
-	 */
-	protected void addError(String errorKey, String errorMessage) {
-		invalid = true;
-		controller.setAttr(errorKey, errorMessage);
-		if (shortCircuit) {
-			throw new ValidateException();
-		}
-	}
-	
-	/**
 	 * Return the controller of this action.
 	 */
 	protected Controller getController() {
@@ -120,10 +167,18 @@ public abstract class Validator implements Interceptor {
 	}
 	
 	/**
-	 * Return the controller key of this action.
+	 * Return the controller path of this action.
 	 */
+	protected String getControllerPath() {
+		return invocation.getControllerPath();
+	}
+	
+	/**
+	 * 该方法已改名为 getControllerPath()
+	 */
+	@Deprecated
 	protected String getControllerKey() {
-		return invocation.getControllerKey();
+		return invocation.getControllerPath();
 	}
 	
 	/**
@@ -362,7 +417,7 @@ public abstract class Validator implements Interceptor {
 			return ;
 		}
 		try {
-			new SimpleDateFormat(getDatePattern()).parse(value.trim());	// Date temp = Date.valueOf(value); 为了兼容 64位 JDK
+			TimeKit.getSimpleDateFormat(getDatePattern()).parse(value.trim());	// Date temp = Date.valueOf(value); 为了兼容 64位 JDK
 		}
 		catch (Exception e) {
 			addError(errorKey, errorMessage);
@@ -379,7 +434,7 @@ public abstract class Validator implements Interceptor {
 			return ;
 		}
 		try {
-			Date temp = new SimpleDateFormat(getDatePattern()).parse(value.trim());	// Date temp = Date.valueOf(value); 为了兼容 64位 JDK
+			Date temp = TimeKit.getSimpleDateFormat(getDatePattern()).parse(value.trim());	// Date temp = Date.valueOf(value); 为了兼容 64位 JDK
 			if (temp.before(min) || temp.after(max)) {
 				addError(errorKey, errorMessage);
 			}
@@ -395,7 +450,7 @@ public abstract class Validator implements Interceptor {
 	protected void validateDate(String field, String min, String max, String errorKey, String errorMessage) {
 		// validateDate(field, Date.valueOf(min), Date.valueOf(max), errorKey, errorMessage);  为了兼容 64位 JDK
 		try {
-			SimpleDateFormat sdf = new SimpleDateFormat(getDatePattern());
+			SimpleDateFormat sdf = TimeKit.getSimpleDateFormat(getDatePattern());
 			validateDate(field, sdf.parse(min.trim()), sdf.parse(max.trim()), errorKey, errorMessage);
 		} catch (Exception e) {
 			addError(errorKey, errorMessage);
@@ -496,9 +551,12 @@ public abstract class Validator implements Interceptor {
 	}
 	
 	private void validateStringValue(String value, int minLen, int maxLen, String errorKey, String errorMessage) {
-		if (StrKit.isBlank(value)) {
+		if (minLen > 0 && StrKit.isBlank(value)) {
 			addError(errorKey, errorMessage);
 			return ;
+		}
+		if (value == null) {		// 支持 minLen <= 0 且 value == null 的情况
+			value = "";
 		}
 		if (value.length() < minLen || value.length() > maxLen) {
 			addError(errorKey, errorMessage);

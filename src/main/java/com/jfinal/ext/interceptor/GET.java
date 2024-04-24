@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ public class GET implements Interceptor {
 		if ("GET".equalsIgnoreCase(controller.getRequest().getMethod())) {
 			inv.invoke();
 		} else {
-			controller.renderError(404);
+			controller.renderError(405);
 		}
 	}
 }

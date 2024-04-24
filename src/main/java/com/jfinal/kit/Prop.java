@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,14 @@ import com.jfinal.core.Const;
  */
 public class Prop {
 	
-	private Properties properties = null;
+	protected Properties properties;
+	
+	/**
+	 * 支持 new Prop().appendIfExists(...)
+	 */
+	public Prop() {
+		properties = new Properties();
+	}
 	
 	/**
 	 * Prop constructor.
@@ -55,7 +62,7 @@ public class Prop {
 	public Prop(String fileName, String encoding) {
 		InputStream inputStream = null;
 		try {
-			inputStream = Thread.currentThread().getContextClassLoader().getResourceAsStream(fileName);		// properties.load(Prop.class.getResourceAsStream(fileName));
+			inputStream = getClassLoader().getResourceAsStream(fileName);		// properties.load(Prop.class.getResourceAsStream(fileName));
 			if (inputStream == null) {
 				throw new IllegalArgumentException("Properties file not found in classpath: " + fileName);
 			}
@@ -67,6 +74,11 @@ public class Prop {
 		finally {
 			if (inputStream != null) try {inputStream.close();} catch (IOException e) {LogKit.error(e.getMessage(), e);}
 		}
+	}
+	
+	private ClassLoader getClassLoader() {
+		ClassLoader ret = Thread.currentThread().getContextClassLoader();
+		return ret != null ? ret : getClass().getClassLoader();
 	}
 	
 	/**
@@ -91,7 +103,7 @@ public class Prop {
 		if (file == null) {
 			throw new IllegalArgumentException("File can not be null.");
 		}
-		if (file.isFile() == false) {
+		if (!file.isFile()) {
 			throw new IllegalArgumentException("File not found : " + file.getName());
 		}
 		
@@ -108,12 +120,62 @@ public class Prop {
 		}
 	}
 	
+	public Prop append(Prop prop) {
+		if (prop == null) {
+			throw new IllegalArgumentException("prop can not be null");
+		}
+		properties.putAll(prop.getProperties());
+		return this;
+	}
+	
+	public Prop append(String fileName, String encoding) {
+		return append(new Prop(fileName, encoding));
+	}
+	
+	public Prop append(String fileName) {
+		return append(fileName, Const.DEFAULT_ENCODING);
+	}
+	
+	public Prop appendIfExists(String fileName, String encoding) {
+		try {
+			return append(new Prop(fileName, encoding));
+		} catch (Exception e) {
+			return this;
+		}
+	}
+	
+	public Prop appendIfExists(String fileName) {
+		return appendIfExists(fileName, Const.DEFAULT_ENCODING);
+	}
+	
+	public Prop append(File file, String encoding) {
+		return append(new Prop(file, encoding));
+	}
+	
+	public Prop append(File file) {
+		return append(file, Const.DEFAULT_ENCODING);
+	}
+	
+	public Prop appendIfExists(File file, String encoding) {
+		if (file.isFile()) {
+			append(new Prop(file, encoding));
+		}
+		return this;
+	}
+	
+	public Prop appendIfExists(File file) {
+		return appendIfExists(file, Const.DEFAULT_ENCODING);
+	}
+	
 	public String get(String key) {
-		return properties.getProperty(key);
+		// 下面这行代码只要 key 存在，就不会返回 null。未给定 value 或者给定一个或多个空格都将返回 ""
+		String value = properties.getProperty(key);
+		return value != null && value.length() != 0 ? value.trim() : null;
 	}
 	
 	public String get(String key, String defaultValue) {
-		return properties.getProperty(key, defaultValue);
+		String value = properties.getProperty(key);
+		return value != null && value.length() != 0 ? value.trim() : defaultValue;
 	}
 	
 	public Integer getInt(String key) {
@@ -140,6 +202,18 @@ public class Prop {
 		return defaultValue;
 	}
 	
+	public Double getDouble(String key) {
+		return getDouble(key, null);
+	}
+	
+	public Double getDouble(String key, Double defaultValue) {
+		String value = properties.getProperty(key);
+		if (value != null) {
+			return Double.parseDouble(value.trim());
+		}
+		return defaultValue;
+	}
+	
 	public Boolean getBoolean(String key) {
 		return getBoolean(key, null);
 	}
@@ -160,6 +234,14 @@ public class Prop {
 	
 	public boolean containsKey(String key) {
 		return properties.containsKey(key);
+	}
+	
+	public boolean isEmpty() {
+		return properties.isEmpty();
+	}
+	
+	public boolean notEmpty() {
+		return ! properties.isEmpty();
 	}
 	
 	public Properties getProperties() {

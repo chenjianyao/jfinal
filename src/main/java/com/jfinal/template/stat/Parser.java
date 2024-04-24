@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2017, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2023, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,55 +18,41 @@ package com.jfinal.template.stat;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.jfinal.template.Directive;
+import com.jfinal.template.EngineConfig;
 import com.jfinal.template.Env;
 import com.jfinal.template.expr.ExprParser;
 import com.jfinal.template.expr.ast.ExprList;
 import com.jfinal.template.expr.ast.ForCtrl;
-import com.jfinal.template.stat.Symbol;
-import com.jfinal.template.stat.ast.Break;
-import com.jfinal.template.stat.ast.Call;
-import com.jfinal.template.stat.ast.Continue;
-import com.jfinal.template.stat.ast.Define;
-import com.jfinal.template.stat.ast.Else;
-import com.jfinal.template.stat.ast.ElseIf;
-import com.jfinal.template.stat.ast.For;
-import com.jfinal.template.stat.ast.If;
-import com.jfinal.template.stat.ast.Include;
-import com.jfinal.template.stat.ast.Return;
-import com.jfinal.template.stat.ast.Set;
-import com.jfinal.template.stat.ast.SetGlobal;
-import com.jfinal.template.stat.ast.SetLocal;
-import com.jfinal.template.stat.ast.Stat;
-import com.jfinal.template.stat.ast.StatList;
-import com.jfinal.template.stat.ast.Text;
+import com.jfinal.template.stat.ast.*;
 
 /**
- * Parser
+ * DLRD (Double Layer Recursive Descent) Parser
  */
 public class Parser {
-	
+
 	private static final Token EOF = new Token(Symbol.EOF, -1);
-	
+
 	private int forward = 0;
 	private List<Token> tokenList;
 	private StringBuilder content;
 	private String fileName;
 	private Env env;
-	
+
 	public Parser(Env env, StringBuilder content, String fileName) {
 		this.env = env;
 		this.content = content;
 		this.fileName = fileName;
 	}
-	
+
 	private Token peek() {
 		return tokenList.get(forward);
 	}
-	
+
 	private Token move() {
 		return tokenList.get(++forward);
 	}
-	
+
 	private Token matchPara(Token name) {
 		Token current = peek();
 		if (current.symbol == Symbol.PARA) {
@@ -75,7 +61,7 @@ public class Parser {
 		}
 		throw new ParseException("Can not match the parameter of directive #" + name.value(), getLocation(name.row));
 	}
-	
+
 	private void matchEnd(Token name) {
 		if (peek().symbol == Symbol.END) {
 			move();
@@ -83,17 +69,18 @@ public class Parser {
 		}
 		throw new ParseException("Can not match the #end of directive #" + name.value(), getLocation(name.row));
 	}
-	
-	public Stat parse() {
-		tokenList = new Lexer(content, fileName).scan();
+
+	public StatList parse() {
+		EngineConfig ec = env.getEngineConfig();
+		tokenList = new Lexer(content, fileName, ec.getKeepLineBlankDirectives()).scan();
 		tokenList.add(EOF);
-		Stat statList = statList();
+		StatList statList = statList();
 		if (peek() != EOF) {
-			throw new ParseException("Syntax error: can not match " + peek().value(), getLocation(peek().row));
+			throw new ParseException("Syntax error: can not match \"#" + peek().value() + "\"", getLocation(peek().row));
 		}
 		return statList;
 	}
-	
+
 	private StatList statList() {
 		List<Stat> statList = new ArrayList<Stat>();
 		while (true) {
@@ -101,22 +88,28 @@ public class Parser {
 			if (stat == null) {
 				break ;
 			}
-			
+
 			if (stat instanceof Define) {
 				env.addFunction((Define)stat);
 				continue ;
 			}
+
+			// 过滤内容为空的 Text 节点，通常是处于两个指令之间的空白字符被移除以后的结果，详见 TextToken.deleteBlankTail()
+			if (stat instanceof Text && ((Text)stat).isEmpty()) {
+				continue ;
+			}
+
 			statList.add(stat);
 		}
 		return new StatList(statList);
 	}
-	
+
 	private Stat stat() {
 		Token name = peek();
 		switch (name.symbol) {
 		case TEXT:
 			move();
-			return new Text(((TextToken)name).getContent()).setLocation(getLocation(name.row));
+			return new Text(((TextToken)name).getContent(), env.getEngineConfig()).setLocation(getLocation(name.row));
 		case OUTPUT:
 			move();
 			Token para = matchPara(name);
@@ -143,7 +136,7 @@ public class Parser {
 			para = matchPara(name);
 			statList = statList();
 			Stat ret = new If(parseExprList(para), statList, getLocation(name.row));
-			
+
 			Stat current = ret;
 			for (Token elseIfToken=peek(); elseIfToken.symbol == Symbol.ELSEIF; elseIfToken=peek()) {
 				move();
@@ -165,9 +158,9 @@ public class Parser {
 			String functionName = name.value();
 			move();
 			para = matchPara(name);
-			Stat stat = statList();
+			statList = statList();
 			matchEnd(name);
-			return new Define(functionName, parseExprList(para), stat, getLocation(name.row));
+			return new Define(functionName, parseExprList(para), statList, getLocation(name.row));
 		case CALL:
 			functionName = name.value();
 			move();
@@ -199,8 +192,12 @@ public class Parser {
 		case RETURN:
 			move();
 			return Return.me;
+		case RETURN_IF:
+			move();
+			para = matchPara(name);
+			return new ReturnIf(parseExprList(para), getLocation(name.row));
 		case ID:
-			Stat dire = env.getEngineConfig().getDirective(name.value());
+			Class<? extends Directive> dire = env.getEngineConfig().getDirective(name.value());
 			if (dire == null) {
 				throw new ParseException("Directive not found: #" + name.value(), getLocation(name.row));
 			}
@@ -208,40 +205,74 @@ public class Parser {
 			move();
 			para = matchPara(name);
 			ret.setExprList(parseExprList(para));
-			
-			if (dire.hasEnd()) {
+
+			if (ret.hasEnd()) {
 				statList = statList();
-				ret.setStat(statList);
+				ret.setStat(statList.getActualStat());
 				matchEnd(name);
 			}
 			return ret;
+		case EOF:
 		case PARA:
 		case ELSEIF:
 		case ELSE:
 		case END:
-		case EOF:
+		case CASE:
+		case DEFAULT:
 			return null;
+		case SWITCH:
+			move();
+			para = matchPara(name);
+			Switch _switch = new Switch(parseExprList(para), getLocation(name.row));
+
+			CaseSetter currentCaseSetter = _switch;
+			for (Token currentToken=peek(); ; currentToken=peek()) {
+				if (currentToken.symbol == Symbol.CASE) {
+					move();
+					para = matchPara(currentToken);
+					statList = statList();
+					Case nextCase = new Case(parseExprList(para), statList, getLocation(currentToken.row));
+					currentCaseSetter.setNextCase(nextCase);
+					currentCaseSetter = nextCase;
+				} else if (currentToken.symbol == Symbol.DEFAULT) {
+					move();
+					statList = statList();
+					Default _default = new Default(statList);
+					_switch.setDefault(_default, getLocation(currentToken.row));
+				} else if (currentToken.symbol == Symbol.TEXT) {
+					TextToken tt = (TextToken)currentToken;
+					if (tt.getContent().toString().trim().length() != 0) {
+						throw new ParseException("Syntax error: expect #case or #default directive", getLocation(currentToken.row));
+					}
+					move();
+				} else {
+					break ;
+				}
+			}
+
+			matchEnd(name);
+			return _switch;
 		default :
 			throw new ParseException("Syntax error: can not match the token: " + name.value(), getLocation(name.row));
 		}
 	}
-	
+
 	private Location getLocation(int row) {
 		return new Location(fileName, row);
 	}
-	
-	private Stat createDirective(Stat dire, Token name) {
+
+	private Stat createDirective(Class<? extends Directive> dire, Token name) {
 		try {
-			return dire.getClass().newInstance();
+			return dire.newInstance();
 		} catch (Exception e) {
 			throw new ParseException(e.getMessage(), getLocation(name.row), e);
 		}
 	}
-	
+
 	private ExprList parseExprList(Token paraToken) {
 		return new ExprParser((ParaToken)paraToken, env.getEngineConfig(), fileName).parseExprList();
 	}
-	
+
 	private ForCtrl parseForCtrl(Token paraToken) {
 		return new ExprParser((ParaToken)paraToken, env.getEngineConfig(), fileName).parseForCtrl();
 	}
